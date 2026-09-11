@@ -263,3 +263,54 @@ def get_green_building_scores():
         "campus_rating": "Sustainable Smart Campus (Top 5% Tier)",
         "leaderboard": leaderboard
     }
+
+# --- IoT Hardware Ingestion & Device Gateway ---
+
+class IoTTelemetryPayload(BaseModel):
+    device_id: str
+    building_id: str
+    protocol: str = Field("MQTT", description="MQTT, Modbus-TCP, BACnet/IP, HTTP-REST")
+    power_kw: Optional[float] = None
+    voltage_v: Optional[float] = Field(480.0, description="3-phase RMS voltage")
+    occupancy_count: Optional[int] = None
+    ambient_temp_c: Optional[float] = None
+    solar_generation_kw: Optional[float] = None
+
+IOT_DEVICE_REGISTRY = [
+    {"device_id": "IOT-MTR-ENG-01", "name": "Schneider PowerLogic PM8000", "building": "Academic Block A", "type": "Smart Power Meter", "protocol": "Modbus-TCP", "status": "online", "sample_rate": "1s", "last_ping": "2s ago"},
+    {"device_id": "IOT-MTR-SCI-02", "name": "Siemens PAC4200 Multi-function", "building": "Science & Bio-Tech Complex", "type": "Sub-Meter & Harmonic Analyzer", "protocol": "BACnet/IP", "status": "online", "sample_rate": "1s", "last_ping": "1s ago"},
+    {"device_id": "IOT-MTR-LIB-03", "name": "Eaton PowerXpert Meter 2000", "building": "Memorial Central Library", "type": "Smart Sub-Meter", "protocol": "Modbus-TCP", "status": "online", "sample_rate": "5s", "last_ping": "4s ago"},
+    {"device_id": "IOT-SOL-CANOPY-01", "name": "SolarEdge Commercial Inverter Gateway", "building": "Canopy & Rooftop Solar", "type": "PV Inverter Telemetry", "protocol": "SunSpec Modbus", "status": "online", "sample_rate": "10s", "last_ping": "3s ago"},
+    {"device_id": "IOT-BMS-TESLA-01", "name": "Megapack BESS Industrial Gateway", "building": "Central Substation", "type": "Battery Management System (BMS)", "protocol": "CAN-to-Ethernet / REST", "status": "online", "sample_rate": "500ms", "last_ping": "1s ago"},
+    {"device_id": "IOT-OCC-OPTIC-04", "name": "Milesight AI Optical People Counter", "building": "All Campus Facilities", "type": "PIR + Optical Headcount Sensor", "protocol": "MQTT / LoRaWAN", "status": "online", "sample_rate": "30s", "last_ping": "12s ago"}
+]
+
+@app.get("/api/iot/devices")
+def get_iot_devices():
+    """Returns the connected IoT hardware sensors, microcontrollers, and protocols."""
+    return {
+        "status": "success",
+        "device_count": len(IOT_DEVICE_REGISTRY),
+        "gateway_status": "MQTT/Modbus Broker Connected (Port 1883/502)",
+        "devices": IOT_DEVICE_REGISTRY
+    }
+
+@app.post("/api/iot/telemetry")
+def post_iot_telemetry(payload: IoTTelemetryPayload):
+    """Receives live sensor packets from ESP32, Raspberry Pi, smart meters, or MQTT brokers."""
+    # Find matching building and update live load if provided
+    target = next((b for b in BUILDINGS if b["id"] == payload.building_id), None)
+    if target:
+        if payload.power_kw is not None:
+            target["current_consumption_kw"] = round(payload.power_kw, 1)
+        if payload.occupancy_count is not None:
+            target["current_occupancy"] = payload.occupancy_count
+
+    return {
+        "status": "acknowledged",
+        "device_id": payload.device_id,
+        "protocol": payload.protocol,
+        "processed_at": "now",
+        "applied_to_building": target["name"] if target else "Unknown"
+    }
+
